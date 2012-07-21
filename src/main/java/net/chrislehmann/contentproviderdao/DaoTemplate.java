@@ -6,7 +6,9 @@ import android.database.Cursor;
 import android.net.Uri;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class DaoTemplate {
 
@@ -72,6 +74,7 @@ public class DaoTemplate {
                 if (field.isAnnotationPresent(Field.class)) {
                     String columnName = field.getAnnotation(Field.class).columnName();
                     Class type = field.getType();
+
                     field.setAccessible(true);
                     setValueOnContentValues(object, contentValues, field, columnName);
 
@@ -179,7 +182,7 @@ public class DaoTemplate {
 
     public <T extends Object> Result<T> load(Object id, Class<T> klass) {
 
-        if( id == null ){
+        if (id == null) {
             return new Result<T>(null, null);
         }
 
@@ -270,8 +273,29 @@ public class DaoTemplate {
             } else if (field.isAnnotationPresent(ForeignKey.class)) {
                 setJoinedClassValue(objectClass, cursor, instance, field);
             }
+            else if (field.isAnnotationPresent(JoinedList.class)) {
+                setJoinedListValue(objectClass, cursor, instance, field);
+            }
         }
         return instance;
+    }
+
+    private <T extends Object> void setJoinedListValue(Class<T> objectClass, Cursor cursor, T instance, java.lang.reflect.Field field)  {
+        JoinedList list = field.getAnnotation(JoinedList.class);
+        Object keyValue = getIdValue(objectClass, cursor);
+        Result<List<?>> joinedResults = query(list.klass(), list.foreignKeyColumnName() + " = ?", keyValue.toString() );
+        field.setAccessible(true);
+        try {
+            field.set(instance, joinedResults.object);
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException("Cannot set list field", e);
+        }
+    }
+
+    private <T extends Object> Object getIdValue(Class<T> objectClass, Cursor cursor) {
+        java.lang.reflect.Field idTypeField = getIdField(objectClass);
+        Field field = idTypeField.getAnnotation(Field.class);
+        return getValue(cursor, field.columnName(), idTypeField.getType());
     }
 
     private <T extends Object> void setJoinedClassValue(Class<T> sessionClass, Cursor c, T instance, java.lang.reflect.Field field) {
@@ -312,6 +336,7 @@ public class DaoTemplate {
         return value;
     }
 
+
     private <T extends Object> java.lang.reflect.Field getIdField(Class<T> sessionClass) {
         for (java.lang.reflect.Field field : sessionClass.getDeclaredFields()) {
             if (field.isAnnotationPresent(Field.class)) {
@@ -335,17 +360,34 @@ public class DaoTemplate {
     public class Result<T> {
         public T object;
         public Cursor cursor;
+        Map<String, Cursor> joinedCursors = new HashMap<String, Cursor>();
 
         public Result(T object, Cursor cursor) {
             this.object = object;
             this.cursor = cursor;
         }
 
+        public void addJoinedCursor(String fieldName, Cursor cursor) {
+            joinedCursors.put(fieldName, cursor);
+        }
+
+        public Cursor getResultForField(String fieldName) {
+            return joinedCursors.get(fieldName);
+        }
+
         public void close() {
+            for (Cursor joinedCursor : joinedCursors.values()) {
+                if (joinedCursor != null && !joinedCursor.isClosed()) {
+                    joinedCursor.close();
+                }
+            }
+            joinedCursors.clear();
+
             if (cursor != null && !cursor.isClosed()) {
                 cursor.close();
             }
         }
+
     }
 
 //    public static Object getField
