@@ -1,0 +1,10 @@
+target
+*.iws
+.DS_Store
+.svn
+**/**/.svn
+*.iml
+*.ipr
+.idea
+**/gen
+out
