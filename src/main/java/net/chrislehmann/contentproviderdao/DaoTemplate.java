@@ -40,8 +40,61 @@ public class DaoTemplate {
                 context.getContentResolver().insert(uri, contentValues);
             }
 
+            updateNestedCollctions(object);
+
         }
 
+    }
+
+    private <T> void updateNestedCollctions(T object) {
+        for (java.lang.reflect.Field field : object.getClass().getDeclaredFields()) {
+            if (field.isAnnotationPresent(JoinedList.class)) {
+                JoinedList list = field.getAnnotation(JoinedList.class);
+                java.lang.reflect.Field idField = getIdField(object.getClass());
+                idField.setAccessible(true);
+                Object idValue = getValue(object, idField);
+
+                List<?> existingValues = queryForList(list.klass(), list.foreignKeyColumnName() + " = ?", idValue.toString());
+                for (Object nestedObject : existingValues) {
+                    delete(nestedObject, nestedObject.getClass());
+                }
+
+                try {
+                    field.setAccessible(true);
+                    List<?> newValues = (List<?>) field.get(object);
+                    for (Object newValue : newValues) {
+                        java.lang.reflect.Field forigenKeyField = findForignKeyForObject(list.foreignKeyColumnName(), newValue.getClass());
+                        if (forigenKeyField == null) {
+                            throw new RuntimeException("Could not find forgien key annotation on child class.  Did you map both sides?");
+                        }
+
+                        if (forigenKeyField.getAnnotation(ForeignKey.class).cascadeUpdates() == true) {
+                            throw new RuntimeException("Bi-direction relationship exists.  Set cascade=false on one side of the relationship");
+                        }
+
+                        forigenKeyField.setAccessible(true);
+                        forigenKeyField.set(newValue, object);
+                        save(newValue);
+                    }
+
+                } catch (IllegalAccessException e) {
+                    throw new RuntimeException("Cannot get list value", e);
+                }
+            }
+
+        }
+
+    }
+
+    private java.lang.reflect.Field findForignKeyForObject(String forgienKeyColumnName, Class newValueClass) {
+        for (java.lang.reflect.Field field : newValueClass.getDeclaredFields()) {
+            if (field.isAnnotationPresent(ForeignKey.class)) {
+                if (forgienKeyColumnName.equals(field.getAnnotation(ForeignKey.class).columnName())) {
+                    return field;
+                }
+            }
+        }
+        return null;
     }
 
 
@@ -192,7 +245,7 @@ public class DaoTemplate {
         String idColumnName = idField.getAnnotation(Field.class).columnName();
         Cursor c = context.getContentResolver().query(uri, null, String.format("%s = ?", idColumnName), new String[]{id.toString()}, null);
 
-        if (c.getCount() > 1) {
+        if (c != null && c.getCount() > 1) {
             throw new RuntimeException("Found multiple rows, but only expected one!");
         }
         T instance = createSingleInstanceFromCursor(klass, c);
@@ -206,15 +259,18 @@ public class DaoTemplate {
     }
 
     public <T> Result<List<T>> query(Class<T> klass, String queryString, String... args) {
+        return queryWithParent(klass, null, queryString, args);
+    }
+
+    public <T> Result<List<T>> queryWithParent(Class<T> klass, Object parentObject, String queryString, String... args) {
         Uri uri = Uri.parse(klass.getAnnotation(Content.class).contentUri());
 
         List<T> resultList = new ArrayList<T>();
         Cursor cursor = context.getContentResolver().query(uri, null, queryString, args, null);
         while (cursor.moveToNext()) {
-            resultList.add(createInstanceFromCursor(klass, cursor));
+            resultList.add(createInstanceFromCursor(klass, cursor, parentObject));
         }
 
-        cursor.moveToFirst();
         return new Result<List<T>>(resultList, cursor);
     }
 
@@ -253,7 +309,7 @@ public class DaoTemplate {
 
     private <T extends Object> T createSingleInstanceFromCursor(Class<T> sessionClass, Cursor c) {
         T instance = null;
-        if (c.getCount() > 0) {
+        if (c != null && c.getCount() > 0) {
             c.moveToFirst();
             instance = createInstanceFromCursor(sessionClass, c);
         }
@@ -261,29 +317,37 @@ public class DaoTemplate {
     }
 
     private <T extends Object> T createInstanceFromCursor(Class<T> objectClass, Cursor cursor) {
+        return createInstanceFromCursor(objectClass, cursor, null);
+    }
+
+    private <T extends Object> T createInstanceFromCursor(Class<T> objectClass, Cursor cursor, Object parentObject) {
         T instance;
         try {
             instance = objectClass.newInstance();
         } catch (Exception e) {
             throw new RuntimeException("Error creating class " + objectClass, e);
         }
+
+        //Set the id first
+        java.lang.reflect.Field idField = getIdField(objectClass);
+        setValue(cursor, idField, instance);
+
         for (java.lang.reflect.Field field : objectClass.getDeclaredFields()) {
             if (field.isAnnotationPresent(Field.class)) {
                 setValue(cursor, field, instance);
             } else if (field.isAnnotationPresent(ForeignKey.class)) {
-                setJoinedClassValue(objectClass, cursor, instance, field);
-            }
-            else if (field.isAnnotationPresent(JoinedList.class)) {
+                setJoinedClassValue(objectClass, cursor, instance, field, parentObject);
+            } else if (field.isAnnotationPresent(JoinedList.class)) {
                 setJoinedListValue(objectClass, cursor, instance, field);
             }
         }
         return instance;
     }
 
-    private <T extends Object> void setJoinedListValue(Class<T> objectClass, Cursor cursor, T instance, java.lang.reflect.Field field)  {
+    private <T extends Object> void setJoinedListValue(Class<T> objectClass, Cursor cursor, T instance, java.lang.reflect.Field field) {
         JoinedList list = field.getAnnotation(JoinedList.class);
         Object keyValue = getIdValue(objectClass, cursor);
-        Result<List<?>> joinedResults = query(list.klass(), list.foreignKeyColumnName() + " = ?", keyValue.toString() );
+        Result<List<?>> joinedResults = queryWithParent(list.klass(), instance, list.foreignKeyColumnName() + " = ?", keyValue.toString());
         field.setAccessible(true);
         try {
             field.set(instance, joinedResults.object);
@@ -298,18 +362,38 @@ public class DaoTemplate {
         return getValue(cursor, field.columnName(), idTypeField.getType());
     }
 
-    private <T extends Object> void setJoinedClassValue(Class<T> sessionClass, Cursor c, T instance, java.lang.reflect.Field field) {
+    private <T extends Object> void setJoinedClassValue(Class<T> sessionClass, Cursor c, T instance, java.lang.reflect.Field field, Object parentObject) {
         ForeignKey foreignKey = field.getAnnotation(ForeignKey.class);
         Class<?> foreignKeyType = field.getType();
         java.lang.reflect.Field foreignKeyIdType = getIdField(foreignKeyType);
         Object keyValue = getValue(c, foreignKey.columnName(), foreignKeyIdType.getType());
-        Object object = loadObject(keyValue, foreignKeyType);
         field.setAccessible(true);
+
+        //Don't try and reload our parent object....
+        if( parentObject != null && parentObject.getClass() == field.getType() ){
+            Object parentObjectId = getIdValue( parentObject );
+            if( parentObject != null && keyValue.equals(parentObjectId)){
+                try {
+                    field.set(instance, parentObject);
+                } catch (IllegalAccessException e) {
+                    throw new RuntimeException("Cannot set joined value on field " + field.getName());
+                }
+                return;
+            }
+        }
+
+        Object object = loadObject(keyValue, foreignKeyType);
+
         try {
             field.set(instance, object);
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Cannot set joined value on field " + field.getName());
         }
+    }
+
+    private Object getIdValue(Object parentObject) {
+        java.lang.reflect.Field idField = getIdField(parentObject.getClass());
+        return getValue(parentObject, idField);
     }
 
     private Object getValue(Cursor c, String columnName, Class type) {
