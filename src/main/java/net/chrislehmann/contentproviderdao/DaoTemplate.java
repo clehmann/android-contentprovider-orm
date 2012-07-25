@@ -216,7 +216,7 @@ public class DaoTemplate {
             } else if (type.isPrimitive() && "boolean".equals(type.getName()) || Boolean.class.equals(type)) {
                 f.set(obj, c.getInt(columnIndex) != 0);
             } else if (type.isPrimitive() && "long".equals(type.getName()) || Long.class.equals(type)) {
-                f.set(obj, c.getInt(columnIndex));
+                f.set(obj, c.getLong(columnIndex));
             } else if (type.isPrimitive() && "short".equals(type.getName()) || Short.class.equals(type)) {
                 f.set(obj, c.getInt(columnIndex));
             } else if (type.isEnum()) {
