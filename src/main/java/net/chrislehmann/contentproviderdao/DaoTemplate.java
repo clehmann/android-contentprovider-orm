@@ -252,8 +252,8 @@ public class DaoTemplate {
         return new Result<T>(instance, c);
     }
 
-    public <T extends Object> T loadObject(Object id, Class<T> sessionClass) {
-        Result<T> result = load(id, sessionClass);
+    public <T extends Object> T loadObject(Object id, Class<T> type) {
+        Result<T> result = load(id, type);
         result.close();
         return result.object;
     }
