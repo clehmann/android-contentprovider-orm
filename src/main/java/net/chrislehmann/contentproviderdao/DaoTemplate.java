@@ -21,12 +21,11 @@ public class DaoTemplate {
     public DaoTemplate() {
     }
 
-    public <T extends Object> void save(T object) {
+    public <T extends Object> T save(T object) {
         if (object.getClass().isAnnotationPresent(Content.class)) {
 
             java.lang.reflect.Field field = getIdField(object.getClass());
-            Object idValue;
-            idValue = getValue(object, field);
+            Object idValue = getValue(object, field);
 
             ContentValues contentValues = createContentValuesFromObject(object);
             Uri uri = Uri.parse(object.getClass().getAnnotation(Content.class).contentUri());
@@ -37,13 +36,39 @@ public class DaoTemplate {
                         uri, contentValues, field.getAnnotation(Field.class).columnName() + " = ?", new String[]{idValue.toString()}
                 );
             } else {
-                context.getContentResolver().insert(uri, contentValues);
+                Uri newUrl = context.getContentResolver().insert(uri, contentValues);
+                String newIdString = newUrl.getLastPathSegment();
+                Object newIdValue = convertStringToType(field, newIdString);
+                try {
+                    field.setAccessible(true);
+                    field.set(object, newIdValue);
+                } catch (IllegalAccessException e) {
+                    throw new RuntimeException("Error setting new id on object");
+                }
             }
 
             updateNestedCollctions(object);
 
         }
+        return object;
+    }
 
+    private Object convertStringToType(java.lang.reflect.Field field, String idValue) {
+        Class type = field.getType();
+        if (String.class.equals(type)) {
+            return idValue;
+        } else if (type.isPrimitive() && "int".equals(type.getName()) || Integer.class.equals(type)) {
+            return Integer.valueOf(idValue);
+        } else if (type.isPrimitive() && "float".equals(type.getName()) || Float.class.equals(type)) {
+            return Float.valueOf(idValue);
+        } else if (type.isPrimitive() && "double".equals(type.getName()) || Double.class.equals(type)) {
+            return Double.valueOf(idValue);
+        } else if (type.isPrimitive() && "long".equals(type.getName()) || Long.class.equals(type)) {
+            return Long.valueOf(idValue);
+        } else if (type.isPrimitive() && "short".equals(type.getName()) || Short.class.equals(type)) {
+            return Short.valueOf(idValue);
+        }
+        return null;
     }
 
     private <T> void updateNestedCollctions(T object) {
@@ -370,9 +395,9 @@ public class DaoTemplate {
         field.setAccessible(true);
 
         //Don't try and reload our parent object....
-        if( parentObject != null && parentObject.getClass() == field.getType() ){
-            Object parentObjectId = getIdValue( parentObject );
-            if( parentObject != null && keyValue.equals(parentObjectId)){
+        if (parentObject != null && parentObject.getClass() == field.getType()) {
+            Object parentObjectId = getIdValue(parentObject);
+            if (parentObject != null && keyValue.equals(parentObjectId)) {
                 try {
                     field.set(instance, parentObject);
                 } catch (IllegalAccessException e) {
