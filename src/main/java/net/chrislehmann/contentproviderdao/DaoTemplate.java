@@ -296,8 +296,10 @@ public class DaoTemplate {
 
         List<T> resultList = new ArrayList<T>();
         Cursor cursor = context.getContentResolver().query(uri, null, queryString, args, null);
-        while (cursor.moveToNext()) {
-            resultList.add(createInstanceFromCursor(klass, cursor, parentObject));
+        if( cursor != null ){
+            while (cursor.moveToNext()) {
+                resultList.add(createInstanceFromCursor(klass, cursor, parentObject));
+            }
         }
 
         return new Result<List<T>>(resultList, cursor);
