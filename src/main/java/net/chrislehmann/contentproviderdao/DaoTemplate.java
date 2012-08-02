@@ -87,19 +87,23 @@ public class DaoTemplate {
                 try {
                     field.setAccessible(true);
                     List<?> newValues = (List<?>) field.get(object);
-                    for (Object newValue : newValues) {
-                        java.lang.reflect.Field forigenKeyField = findForignKeyForObject(list.foreignKeyColumnName(), newValue.getClass());
-                        if (forigenKeyField == null) {
-                            throw new RuntimeException("Could not find forgien key annotation on child class.  Did you map both sides?");
+                    if (newValues != null) {
+
+                        for (Object newValue : newValues) {
+                            java.lang.reflect.Field forigenKeyField = findForignKeyForObject(list.foreignKeyColumnName(), newValue.getClass());
+                            if (forigenKeyField == null) {
+                                throw new RuntimeException("Could not find forgien key annotation on child class.  Did you map both sides?");
+                            }
+
+                            if (forigenKeyField.getAnnotation(ForeignKey.class).cascadeUpdates() == true) {
+                                throw new RuntimeException("Bi-direction relationship exists.  Set cascade=false on one side of the relationship");
+                            }
+
+                            forigenKeyField.setAccessible(true);
+                            forigenKeyField.set(newValue, object);
+                            save(newValue);
                         }
 
-                        if (forigenKeyField.getAnnotation(ForeignKey.class).cascadeUpdates() == true) {
-                            throw new RuntimeException("Bi-direction relationship exists.  Set cascade=false on one side of the relationship");
-                        }
-
-                        forigenKeyField.setAccessible(true);
-                        forigenKeyField.set(newValue, object);
-                        save(newValue);
                     }
 
                 } catch (IllegalAccessException e) {
