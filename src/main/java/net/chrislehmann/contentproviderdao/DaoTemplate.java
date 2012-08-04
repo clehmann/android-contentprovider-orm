@@ -128,7 +128,14 @@ public class DaoTemplate {
     }
 
 
-    public <T> void delete(Object id, Class<T> sessionClass) {
+    public <T> void delete(Object object, Class<T> sessionClass) {
+        if (sessionClass.isAnnotationPresent(Content.class)) {
+            Object id = getIdValue(object);
+            deleteById(id, sessionClass);
+        }
+    }
+
+    public <T> void deleteById(Object id, Class<T> sessionClass) {
         if (sessionClass.isAnnotationPresent(Content.class)) {
             Content content = sessionClass.getAnnotation(Content.class);
             java.lang.reflect.Field field = getIdField(sessionClass);
@@ -429,9 +436,9 @@ public class DaoTemplate {
         }
     }
 
-    private Object getIdValue(Object parentObject) {
-        java.lang.reflect.Field idField = getIdField(parentObject.getClass());
-        return getValue(parentObject, idField);
+    private Object getIdValue(Object object) {
+        java.lang.reflect.Field idField = getIdField(object.getClass());
+        return getValue(object, idField);
     }
 
     private Object getValue(Cursor c, String columnName, Class type) {
