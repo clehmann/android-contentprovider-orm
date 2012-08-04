@@ -6,6 +6,7 @@ import android.database.Cursor;
 import android.net.Uri;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -221,6 +222,9 @@ public class DaoTemplate {
                 contentValues.put(columnName, (String) field.get(object));
             } else if (type.isEnum()) {
                 contentValues.put(columnName, valueToSave == null ? null : valueToSave.toString());
+            } else if(Date.class.equals(type)){
+                Date date = (Date)field.get(object);
+                contentValues.put(columnName, date.getTime());
             }
         }
 
@@ -255,6 +259,9 @@ public class DaoTemplate {
                     Enum val = Enum.valueOf(enumType, value);
                     f.set(obj, val);
                 }
+            } else if(Date.class.equals(type)){
+                long seconds = c.getLong(columnIndex);
+                f.set(obj, new Date(seconds));
             }
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Error setting value", e);
