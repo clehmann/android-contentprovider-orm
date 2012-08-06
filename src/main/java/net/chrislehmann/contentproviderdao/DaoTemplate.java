@@ -229,8 +229,8 @@ public class DaoTemplate {
                 contentValues.put(columnName, (String) field.get(object));
             } else if (type.isEnum()) {
                 contentValues.put(columnName, valueToSave == null ? null : valueToSave.toString());
-            } else if(Date.class.equals(type)){
-                Date date = (Date)field.get(object);
+            } else if (Date.class.equals(type)) {
+                Date date = (Date) field.get(object);
                 contentValues.put(columnName, date.getTime());
             }
         }
@@ -266,13 +266,24 @@ public class DaoTemplate {
                     Enum val = Enum.valueOf(enumType, value);
                     f.set(obj, val);
                 }
-            } else if(Date.class.equals(type)){
+            } else if (Date.class.equals(type)) {
                 long seconds = c.getLong(columnIndex);
                 f.set(obj, new Date(seconds));
             }
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Error setting value", e);
         }
+    }
+
+    public Cursor loadCursor(Object id, Class<?> klass) {
+        if (id == null) {
+            return null;
+        }
+        Uri uri = Uri.parse(klass.getAnnotation(Content.class).contentUri());
+        java.lang.reflect.Field idField = getIdField(klass);
+
+        String idColumnName = idField.getAnnotation(Field.class).columnName();
+        return context.getContentResolver().query(uri, null, String.format("%s = ?", idColumnName), new String[]{id.toString()}, null);
     }
 
 
@@ -282,11 +293,7 @@ public class DaoTemplate {
             return new Result<T>(null, null);
         }
 
-        Uri uri = Uri.parse(klass.getAnnotation(Content.class).contentUri());
-        java.lang.reflect.Field idField = getIdField(klass);
-
-        String idColumnName = idField.getAnnotation(Field.class).columnName();
-        Cursor c = context.getContentResolver().query(uri, null, String.format("%s = ?", idColumnName), new String[]{id.toString()}, null);
+        Cursor c = loadCursor(id, klass);
 
         if (c != null && c.getCount() > 1) {
             throw new RuntimeException("Found multiple rows, but only expected one!");
@@ -305,12 +312,16 @@ public class DaoTemplate {
         return queryWithParent(klass, null, queryString, args);
     }
 
-    public <T> Result<List<T>> queryWithParent(Class<T> klass, Object parentObject, String queryString, String... args) {
+    public Cursor queryForCursor(Class<?> klass, String queryString, String... args) {
         Uri uri = Uri.parse(klass.getAnnotation(Content.class).contentUri());
+        return context.getContentResolver().query(uri, null, queryString, args, null);
+    }
 
+
+    public <T> Result<List<T>> queryWithParent(Class<T> klass, Object parentObject, String queryString, String... args) {
         List<T> resultList = new ArrayList<T>();
-        Cursor cursor = context.getContentResolver().query(uri, null, queryString, args, null);
-        if( cursor != null ){
+        Cursor cursor = queryForCursor(klass, queryString, args);
+        if (cursor != null) {
             while (cursor.moveToNext()) {
                 resultList.add(createInstanceFromCursor(klass, cursor, parentObject));
             }
