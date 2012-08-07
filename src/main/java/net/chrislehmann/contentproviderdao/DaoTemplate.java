@@ -31,8 +31,7 @@ public class DaoTemplate {
             ContentValues contentValues = createContentValuesFromObject(object);
             Uri uri = Uri.parse(object.getClass().getAnnotation(Content.class).contentUri());
 
-            Object existingObject = loadObject(idValue, object.getClass());
-            if (existingObject != null) {
+            if (idValue != null) {
                 context.getContentResolver().update(
                         uri, contentValues, field.getAnnotation(Field.class).columnName() + " = ?", new String[]{idValue.toString()}
                 );
@@ -80,10 +79,8 @@ public class DaoTemplate {
                 idField.setAccessible(true);
                 Object idValue = getValue(object, idField);
 
-                List<?> existingValues = queryForList(list.klass(), list.foreignKeyColumnName() + " = ?", idValue.toString());
-                for (Object nestedObject : existingValues) {
-                    delete(nestedObject, nestedObject.getClass());
-                }
+                Content listContent = (Content) list.klass().getAnnotation(Content.class);
+                context.getContentResolver().delete(Uri.parse(listContent.contentUri()), list.foreignKeyColumnName() + " = ?", new String[]{idValue.toString()});
 
                 try {
                     field.setAccessible(true);
@@ -359,8 +356,41 @@ public class DaoTemplate {
         return result.object;
     }
 
-    public <T extends Object> T loadObjectFromCursor(Cursor cursor, Class<T> sessionClass) {
-        return createSingleInstanceFromCursor(sessionClass, cursor);
+    public <T extends Object> T loadObjectFromCursor(Cursor cursor, Class<T> klass) {
+        return createSingleInstanceFromCursor(klass, cursor);
+    }
+
+
+    public <T extends Object> T queryForSingleFlatObject(Class<T> klass, String queryString, String... params) {
+        T instance = null;
+        Cursor c = queryForCursor(klass, queryString, params);
+        if(c != null && c.getCount() > 0){
+            c.moveToFirst();
+            instance = loadFlatObjectFromCursor(klass, c);
+        }
+        return instance;
+    }
+
+    public <T extends Object> T loadFlatObjectFromCursor(Class<T> objectClass, Cursor cursor) {
+        T instance;
+        try {
+            instance = objectClass.newInstance();
+        } catch (Exception e) {
+            throw new RuntimeException("Error creating class " + objectClass, e);
+        }
+
+        //Set the id first
+        java.lang.reflect.Field idField = getIdField(objectClass);
+        setValue(cursor, idField, instance);
+
+        for (java.lang.reflect.Field field : objectClass.getDeclaredFields()) {
+            if (field.isAnnotationPresent(Field.class)) {
+                setValue(cursor, field, instance);
+            }
+        }
+
+        return instance;
+
     }
 
     private <T extends Object> T createSingleInstanceFromCursor(Class<T> sessionClass, Cursor c) {
@@ -376,22 +406,13 @@ public class DaoTemplate {
         return createInstanceFromCursor(objectClass, cursor, null);
     }
 
-    private <T extends Object> T createInstanceFromCursor(Class<T> objectClass, Cursor cursor, Object parentObject) {
-        T instance;
-        try {
-            instance = objectClass.newInstance();
-        } catch (Exception e) {
-            throw new RuntimeException("Error creating class " + objectClass, e);
-        }
 
-        //Set the id first
-        java.lang.reflect.Field idField = getIdField(objectClass);
-        setValue(cursor, idField, instance);
+    private <T extends Object> T createInstanceFromCursor(Class<T> objectClass, Cursor cursor, Object parentObject) {
+
+        T instance = loadFlatObjectFromCursor(objectClass, cursor);
 
         for (java.lang.reflect.Field field : objectClass.getDeclaredFields()) {
-            if (field.isAnnotationPresent(Field.class)) {
-                setValue(cursor, field, instance);
-            } else if (field.isAnnotationPresent(ForeignKey.class)) {
+            if (field.isAnnotationPresent(ForeignKey.class)) {
                 setJoinedClassValue(objectClass, cursor, instance, field, parentObject);
             } else if (field.isAnnotationPresent(JoinedList.class)) {
                 setJoinedListValue(objectClass, cursor, instance, field);
@@ -494,6 +515,16 @@ public class DaoTemplate {
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Error getting field...");
         }
+    }
+
+    public <T> T loadFlatObject(int id, Class<T> klass) {
+        T instance = null;
+        Cursor cursor = loadCursor(id, klass);
+        if( cursor != null && cursor.getCount() > 0){
+            cursor.moveToFirst();
+            instance = loadFlatObjectFromCursor(klass, cursor);
+        }
+        return instance;
     }
 
 
