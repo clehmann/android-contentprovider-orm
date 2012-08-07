@@ -88,6 +88,8 @@ public class DaoTemplate {
                     if (newValues != null) {
 
                         for (Object newValue : newValues) {
+                            setId(newValue, null);
+
                             java.lang.reflect.Field forigenKeyField = findForignKeyForObject(list.foreignKeyColumnName(), newValue.getClass());
                             if (forigenKeyField == null) {
                                 throw new RuntimeException("Could not find forgien key annotation on child class.  Did you map both sides?");
@@ -111,6 +113,12 @@ public class DaoTemplate {
 
         }
 
+    }
+
+    private void setId(Object object, Object value) throws IllegalAccessException {
+        java.lang.reflect.Field newValueIdField = getIdField(object.getClass());
+        newValueIdField.setAccessible(true);
+        newValueIdField.set(object, value);
     }
 
     private java.lang.reflect.Field findForignKeyForObject(String forgienKeyColumnName, Class newValueClass) {
