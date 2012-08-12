@@ -369,6 +369,15 @@ public class DaoTemplate {
     }
 
 
+    public <T extends Object> List<T> queryForFlatList(Class<T> klass, String queryString, String... params) {
+        ArrayList<T> objects = new ArrayList<T>();
+        Cursor c = queryForCursor(klass, queryString, params);
+        while( c != null && c.moveToNext()){
+            objects.add(loadFlatObjectFromCursor(klass, c));
+        }
+        return objects;
+    }
+
     public <T extends Object> T queryForSingleFlatObject(Class<T> klass, String queryString, String... params) {
         T instance = null;
         Cursor c = queryForCursor(klass, queryString, params);
