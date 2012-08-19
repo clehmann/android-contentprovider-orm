@@ -4,8 +4,10 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
+import roboguice.util.Ln;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -243,7 +245,14 @@ public class DaoTemplate {
     }
 
     public void setValue(Cursor c, java.lang.reflect.Field f, Object obj) {
-        int columnIndex = c.getColumnIndex(f.getAnnotation(Field.class).columnName());
+        String columnName = f.getAnnotation(Field.class).columnName();
+        int columnIndex = c.getColumnIndex(columnName);
+        if( columnIndex == -1 ){
+            Ln.e( "Can't find column %s on ob table mapped to class %s", columnName, obj.getClass().getCanonicalName() );
+            Ln.e( "Possible columns are: %s", Arrays.toString(c.getColumnNames()) );
+            throw new IllegalStateException("Invalid column name in mapping, see log for details.");
+        }
+
 
         Class<? extends Object> type = f.getType();
         f.setAccessible(true);
@@ -326,8 +335,11 @@ public class DaoTemplate {
     public <T> Result<List<T>> queryWithParent(Class<T> klass, Object parentObject, String queryString, String... args) {
         List<T> resultList = new ArrayList<T>();
         Cursor cursor = queryForCursor(klass, queryString, args);
-        if (cursor != null) {
-            while (cursor.moveToNext()) {
+        Ln.d("Query on class %s '%s' with params %s returned cursor of size %d",klass.getCanonicalName(), queryString, args, cursor != null ? cursor.getCount() : -1);
+
+        if (cursor != null && cursor.getCount() > 0) {
+            while (cursor.moveToNext() ) {
+                Ln.d("Creating instance for row ", cursor.getPosition());
                 resultList.add(createInstanceFromCursor(klass, cursor, parentObject));
             }
         }
