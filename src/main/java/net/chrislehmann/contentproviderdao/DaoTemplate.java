@@ -152,6 +152,14 @@ public class DaoTemplate {
         }
     }
 
+
+    public void deleteAll(Class<?> klass) {
+        if (klass.isAnnotationPresent(Content.class)) {
+            Content content = klass.getAnnotation(Content.class);
+            context.getContentResolver().delete(Uri.parse(content.contentUri()), null, null);
+        }
+    }
+
     private Object getValue(Object object, java.lang.reflect.Field field) {
         Object idValue;
         try {
