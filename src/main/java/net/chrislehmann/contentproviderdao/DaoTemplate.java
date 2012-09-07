@@ -389,6 +389,15 @@ public class DaoTemplate {
     }
 
 
+    public <T extends Object> T loadObjectFromCurrentCursorPosition(Cursor cursor, Class<T> klass) {
+        T instance = null;
+        if( cursor!= null && !cursor.isBeforeFirst() && !cursor.isAfterLast()){
+            instance = createInstanceFromCursor(klass, cursor);
+        }
+        return instance;
+    }
+
+
     public <T extends Object> List<T> queryForFlatList(Class<T> klass, String queryString, String... params) {
         ArrayList<T> objects = new ArrayList<T>();
         Cursor c = queryForCursor(klass, queryString, params);
